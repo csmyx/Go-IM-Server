@@ -2,9 +2,12 @@ package server
 
 import (
 	"fmt"
+	"io"
 	"net"
 	"sync"
 )
+
+const msgBufLen = 4096
 
 type Server struct {
 	IP          string
@@ -37,7 +40,7 @@ func (s *Server) Serve() {
 
 	Log.Printf("启动服务器[%s] SUCCEED\n", addr)
 
-	go s.broadcast()
+	go s.listenMessage()
 
 	for {
 		// accept connection
@@ -60,20 +63,59 @@ func (s *Server) handler(conn net.Conn) {
 
 	Log.Printf("处理请求[%s] STARTED\n", u.addr)
 
-	s.Login(u)
+	s.login(u)
+
+	// receive message sent by user
+	go func() {
+		buf := make([]byte, msgBufLen)
+		for {
+			n, err := u.conn.Read(buf)
+			if n == 0 {
+				s.logout(u)
+				return
+			}
+			if err != nil && err != io.EOF {
+				Log.Fatalln(err)
+			}
+
+			// strip last newline
+			msg := string(buf[:n-1])
+			s.broadcastChat(u, msg)
+		}
+	}()
 
 	select {}
 }
 
 // broadcast login message
-func (s *Server) Login(u *user) {
-	msg := "[" + u.addr + "]" + u.name + " 已上线"
-	s.msgCh <- msg
-	Log.Println(msg)
+func (s *Server) login(u *user) {
+	msg := u.chatFmt() + "已上线"
+	s.broadcast(msg)
+	Log.Println(u.String(), "LOGIN")
 }
 
-// broadcast messages to all online users
-func (s *Server) broadcast() {
+// broadcast logout message
+func (s *Server) logout(u *user) {
+	msg := u.chatFmt() + "已下线"
+	s.broadcast(msg)
+	Log.Println(u.String(), "LOGOUT")
+}
+
+// broadcast chat message
+func (s *Server) broadcastChat(u *user, m string) {
+	msg := u.chatFmt() + m
+	s.broadcast(msg)
+	Log.Println(u.String(), "BROAD CHAT")
+}
+
+// broadcast messages to all online users via channel
+func (s *Server) broadcast(msg string) {
+	s.msgCh <- msg
+	Debug.Println("brodcast", msg)
+}
+
+// listening message channel
+func (s *Server) listenMessage() {
 	for {
 		msg := <-s.msgCh
 		s.mtx.RLock()
@@ -81,6 +123,5 @@ func (s *Server) broadcast() {
 			u.ch <- msg
 		}
 		s.mtx.RUnlock()
-		Debug.Println("brodcast", msg)
 	}
 }

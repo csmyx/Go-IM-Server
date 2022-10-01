@@ -31,3 +31,12 @@ func (u *user) listenMessage() {
 		Debug.Println(msg)
 	}
 }
+
+func (u *user) String() string {
+	str := "[" + u.addr + "]" + u.name
+	return str
+}
+
+func (u *user) chatFmt() string {
+	return u.name + ": "
+}
