@@ -56,14 +56,14 @@ func (s *Server) Serve() {
 }
 
 func (s *Server) handler(conn net.Conn) {
-	u := newUser(conn)
+	u := newUser(conn, s)
 	s.mtx.Lock()
 	s.onlineUsers[u.name] = u
 	s.mtx.Unlock()
 
 	Log.Printf("处理请求[%s] STARTED\n", u.addr)
 
-	s.login(u)
+	u.login()
 
 	// receive message sent by user
 	go func() {
@@ -71,7 +71,7 @@ func (s *Server) handler(conn net.Conn) {
 		for {
 			n, err := u.conn.Read(buf)
 			if n == 0 {
-				s.logout(u)
+				u.logout()
 				return
 			}
 			if err != nil && err != io.EOF {
@@ -80,38 +80,11 @@ func (s *Server) handler(conn net.Conn) {
 
 			// strip last newline
 			msg := string(buf[:n-1])
-			s.broadcastChat(u, msg)
+			u.broadcastChat(msg)
 		}
 	}()
 
 	select {}
-}
-
-// broadcast login message
-func (s *Server) login(u *user) {
-	msg := u.chatFmt() + "已上线"
-	s.broadcast(msg)
-	Log.Println(u.String(), "LOGIN")
-}
-
-// broadcast logout message
-func (s *Server) logout(u *user) {
-	msg := u.chatFmt() + "已下线"
-	s.broadcast(msg)
-	Log.Println(u.String(), "LOGOUT")
-}
-
-// broadcast chat message
-func (s *Server) broadcastChat(u *user, m string) {
-	msg := u.chatFmt() + m
-	s.broadcast(msg)
-	Log.Println(u.String(), "BROAD CHAT")
-}
-
-// broadcast messages to all online users via channel
-func (s *Server) broadcast(msg string) {
-	s.msgCh <- msg
-	Debug.Println("brodcast", msg)
 }
 
 // listening message channel
